@@ -127,27 +127,45 @@ namespace SENomexLayers
 
     public class SolidEdgeConnector
     {
-        public SolidEdgeDocument ConnectToSolidEdge()
+        public SolidEdgePart.SheetMetalDocument ConnectToSolidEdge(string filePath)
         {
             Application? objApplication = null;
-            SolidEdgeDocument? objDocument = null;
+            SolidEdgePart.SheetMetalDocument? objDocument = null;
 
             try
             {
                 OleMessageFilter.Register();
 
-                // Connect to a running instance of Solid Edge
+                // Try to connect to a running instance of Solid Edge
                 objApplication = (Application?)MarshalHelper.GetActiveObject("SolidEdge.Application");
 
-                // Check if objApplication is not null before accessing ActiveDocument
                 if (objApplication != null)
                 {
-                    // Get the active document object
-                    objDocument = objApplication.ActiveDocument;
+                    // Ensure Solid Edge is in visible mode and display alerts are disabled
+                    objApplication.Visible = true;
+                    objApplication.DisplayAlerts = false;
+
+                    // Open the document
+                    objDocument = (SolidEdgePart.SheetMetalDocument)objApplication.Documents.Open(filePath);
                 }
                 else
                 {
-                    throw new InvalidOperationException("Failed to get the SolidEdge.Application object.");
+                    // If no running instance, create a new instance of Solid Edge
+                    objApplication = (Application)Activator.CreateInstance(Type.GetTypeFromProgID("SolidEdge.Application")!);
+
+                    if (objApplication != null)
+                    {
+                        // Ensure Solid Edge is in non-visible mode and display alerts are disabled
+                        objApplication.Visible = false;
+                        objApplication.DisplayAlerts = false;
+
+                        // Open the document
+                        objDocument = (SolidEdgePart.SheetMetalDocument)objApplication.Documents.Open(filePath);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("Failed to create a new instance of SolidEdge.Application.");
+                    }
                 }
             }
             finally
@@ -155,9 +173,10 @@ namespace SENomexLayers
                 OleMessageFilter.Revoke();
             }
 
-            return objDocument ?? throw new InvalidOperationException("Failed to get the active document.");
+            return objDocument ?? throw new InvalidOperationException("Failed to open the document.");
         }
 
+        //First try to open the custom section of the file properties without opening the document
         public List<string> GetCustomProperties(string filePath)
         {
             var customPropertiesList = new List<string>();
@@ -177,43 +196,37 @@ namespace SENomexLayers
                     }
                 }
             }
+            // If the the custom sections happens to not be there its likely because the document is open in Solid Edge
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to retrieve file properties without opening the document: {ex.Message}");
+                Console.WriteLine($"Failed to retrieve file properties without opening the document: {ex.Message}"); 
 
-                // If failed, open the document in Solid Edge
-                SolidEdgeDocument? objDocument = null;
+                // If failed, open the document in Solid Edge using SolidEdgeConnector Function
+                SolidEdgePart.SheetMetalDocument? objDocument = null;
                 try
                 {
-                    var objApplication = (Application?)MarshalHelper.GetActiveObject("SolidEdge.Application");
-                    if (objApplication != null)
+                    objDocument = ConnectToSolidEdge(filePath);
+                    if (objDocument != null)
                     {
-                        objApplication.Visible = false; // Ensure Solid Edge is in non-visible mode
-                        objApplication.DisplayAlerts = false; // Disable dialogs
-
-                        objDocument = (SolidEdgeDocument?)objApplication.Documents.Open(filePath);
-                        if (objDocument != null)
+                        var objPropSets = objDocument.Properties;
+                        foreach (Properties objProps in objPropSets)
                         {
-                            var objPropSets = objDocument.Properties;
-                            foreach (Properties objProps in objPropSets)
+                            if (objProps.Name == "Custom")
                             {
-                                if (objProps.Name == "Custom")
+                                for (int i = 1; i <= objProps.Count; i++)
                                 {
-                                    foreach (Property objProp in objProps)
+                                    if (objProps.Item(i) is PropertyEx objProp)
                                     {
-                                        customPropertiesList.Add($"{objProp.Name}: {objProp.get_Value()}");
+                                        var value = ((dynamic)objProp).Value;
+                                        customPropertiesList.Add($"{objProp.Name}: {value}");
                                     }
                                 }
                             }
                         }
-                        else
-                        {
-                            Console.WriteLine($"Failed to open document: {filePath}");
-                        }
                     }
                     else
                     {
-                        Console.WriteLine("Failed to get the SolidEdge.Application object.");
+                        Console.WriteLine($"Failed to open document: {filePath}");
                     }
                 }
                 catch (Exception innerEx)
@@ -272,24 +285,32 @@ namespace SENomexLayers
 
 class Program
 {
+    [STAThread]
     static void Main(string[] args)
     {
         var searchFolder = @"N:\scot\_SCOT LIBRARY\_LIBRARY BACKUP\DROP IN FRAME\FSF";
 
-        try
+        var thread = new Thread(() =>
         {
-            var solidEdgeConnector = new SENomexLayers.SolidEdgeConnector();
-            var uniqueCodes = new List<string> { "7xxxyy01", "7xxxyy11", "7xxxyy12", "7xxxyy13" };
-
-            var nomexLayerValues = solidEdgeConnector.GetNomexLayers(uniqueCodes, searchFolder);
-            foreach (var value in nomexLayerValues)
+            try
             {
-                Console.WriteLine(value);
+                var solidEdgeConnector = new SENomexLayers.SolidEdgeConnector();
+                var uniqueCodes = new List<string> { "7xxxyy01", "7xxxyy11", "7xxxyy12", "7xxxyy13" };
+
+                var nomexLayerValues = solidEdgeConnector.GetNomexLayers(uniqueCodes, searchFolder);
+                foreach (var value in nomexLayerValues)
+                {
+                    Console.WriteLine(value);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
-        }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+            }
+        });
+
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
     }
 }
