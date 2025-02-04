@@ -158,26 +158,72 @@ namespace SENomexLayers
             return objDocument ?? throw new InvalidOperationException("Failed to get the active document.");
         }
 
-        public List<string> GetCustomProperties(SolidEdgeDocument document)
+        public List<string> GetCustomProperties(string filePath)
         {
             var customPropertiesList = new List<string>();
             try
             {
-                var objPropSets = document.Properties;
-                foreach (Properties objProps in objPropSets)
+                var propertySets = new SolidEdgeFileProperties.PropertySets();
+                propertySets.Open(filePath, false);
+
+                foreach (SolidEdgeFileProperties.Properties properties in propertySets)
                 {
-                    if (objProps.Name == "Custom")
+                    if (properties.Name == "Custom")
                     {
-                        foreach (Property objProp in objProps)
+                        foreach (SolidEdgeFileProperties.Property property in properties)
                         {
-                            customPropertiesList.Add($"{objProp.Name}: {objProp.get_Value()}");
+                            customPropertiesList.Add($"{property.Name}: {property.Value}");
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to retrieve custom properties: {ex.Message}");
+                Console.WriteLine($"Failed to retrieve file properties without opening the document: {ex.Message}");
+
+                // If failed, open the document in Solid Edge
+                SolidEdgeDocument? objDocument = null;
+                try
+                {
+                    var objApplication = (Application?)MarshalHelper.GetActiveObject("SolidEdge.Application");
+                    if (objApplication != null)
+                    {
+                        objApplication.Visible = false; // Ensure Solid Edge is in non-visible mode
+                        objApplication.DisplayAlerts = false; // Disable dialogs
+
+                        objDocument = (SolidEdgeDocument?)objApplication.Documents.Open(filePath);
+                        if (objDocument != null)
+                        {
+                            var objPropSets = objDocument.Properties;
+                            foreach (Properties objProps in objPropSets)
+                            {
+                                if (objProps.Name == "Custom")
+                                {
+                                    foreach (Property objProp in objProps)
+                                    {
+                                        customPropertiesList.Add($"{objProp.Name}: {objProp.get_Value()}");
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Failed to open document: {filePath}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Failed to get the SolidEdge.Application object.");
+                    }
+                }
+                catch (Exception innerEx)
+                {
+                    Console.WriteLine($"Failed to retrieve custom properties by opening the document: {innerEx.Message}");
+                }
+                finally
+                {
+                    objDocument?.Close(false);
+                }
             }
 
             return customPropertiesList;
@@ -192,41 +238,25 @@ namespace SENomexLayers
                 var filePath = Path.Combine(searchFolder, $"{uniqueCode}.psm");
                 if (File.Exists(filePath))
                 {
-                    SolidEdgeDocument? objDocument = null;
                     try
                     {
-                        var objApplication = (Application?)MarshalHelper.GetActiveObject("SolidEdge.Application");
-                        if (objApplication != null)
+                        // Attempt to get properties
+                        var customProperties = GetCustomProperties(filePath);
+
+                        if (customProperties != null)
                         {
-                            objDocument = (SolidEdgeDocument?)objApplication.Documents.Open(filePath);
-                            if (objDocument != null)
+                            foreach (var prop in customProperties)
                             {
-                                var customProperties = GetCustomProperties(objDocument);
-                                foreach (var prop in customProperties)
+                                if (prop.StartsWith("NOMEX_LAYERS"))
                                 {
-                                    if (prop.StartsWith("NOMEX_LAYERS:"))
-                                    {
-                                        nomexLayers.Add(prop);
-                                    }
+                                    nomexLayers.Add($"{uniqueCode}: {prop}");
                                 }
                             }
-                            else
-                            {
-                                Console.WriteLine($"Failed to open document: {filePath}");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("Failed to get the SolidEdge.Application object.");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Failed to retrieve SINK CONFIGURATION for {uniqueCode}: {ex.Message}");
-                    }
-                    finally
-                    {
-                        objDocument?.Close(false);
+                        Console.WriteLine($"Failed to retrieve NOMEX_LAYERS for {uniqueCode}: {ex.Message}");
                     }
                 }
                 else
@@ -244,21 +274,15 @@ class Program
 {
     static void Main(string[] args)
     {
+        var searchFolder = @"N:\scot\_SCOT LIBRARY\_LIBRARY BACKUP\DROP IN FRAME\FSF";
+
         try
         {
-            if (args.Length < 2)
-            {
-                throw new ArgumentException("Insufficient arguments provided.");
-            }
-
-            var uniqueCode = args[0];
-            var searchFolder = args[1];
-
             var solidEdgeConnector = new SENomexLayers.SolidEdgeConnector();
-            var uniqueCodes = new List<string> { uniqueCode };
+            var uniqueCodes = new List<string> { "7xxxyy01", "7xxxyy11", "7xxxyy12", "7xxxyy13" };
 
-            var sinkConfigurationValues = solidEdgeConnector.GetNomexLayers(uniqueCodes, searchFolder);
-            foreach (var value in sinkConfigurationValues)
+            var nomexLayerValues = solidEdgeConnector.GetNomexLayers(uniqueCodes, searchFolder);
+            foreach (var value in nomexLayerValues)
             {
                 Console.WriteLine(value);
             }
