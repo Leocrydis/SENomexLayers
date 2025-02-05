@@ -183,7 +183,7 @@ namespace SENomexLayers
             try
             {
                 var propertySets = new SolidEdgeFileProperties.PropertySets();
-                propertySets.Open(filePath, false);
+                propertySets.Open(filePath, true);
 
                 foreach (SolidEdgeFileProperties.Properties properties in propertySets)
                 {
@@ -199,6 +199,7 @@ namespace SENomexLayers
             // If the the custom sections happens to not be there its likely because the document is open in Solid Edge
             catch (Exception ex)
             {
+                //Most likely means someone has it open in Solid Edge?
                 Console.WriteLine($"Failed to retrieve file properties without opening the document: {ex.Message}"); 
 
                 // If failed, open the document in Solid Edge using SolidEdgeConnector Function
@@ -215,7 +216,8 @@ namespace SENomexLayers
                             {
                                 for (int i = 1; i <= objProps.Count; i++)
                                 {
-                                    if (objProps.Item(i) is PropertyEx objProp)
+                                    var objProp = objProps.Item(i) as PropertyEx;
+                                    if (objProp != null)
                                     {
                                         var value = ((dynamic)objProp).Value;
                                         customPropertiesList.Add($"{objProp.Name}: {value}");
@@ -288,15 +290,20 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
-        var searchFolder = @"N:\scot\_SCOT LIBRARY\_LIBRARY BACKUP\DROP IN FRAME\FSF";
+        if (args.Length < 2)
+        {
+            Console.WriteLine("Insufficient arguments provided. Please provide the search folder followed by a comma-separated list of unique codes.");
+            return;
+        }
+
+        var searchFolder = args[0];
+        var uniqueCodes = new List<string>(args[1].Split(','));
 
         var thread = new Thread(() =>
         {
             try
             {
                 var solidEdgeConnector = new SENomexLayers.SolidEdgeConnector();
-                var uniqueCodes = new List<string> { "7xxxyy01", "7xxxyy11", "7xxxyy12", "7xxxyy13" };
-
                 var nomexLayerValues = solidEdgeConnector.GetNomexLayers(uniqueCodes, searchFolder);
                 foreach (var value in nomexLayerValues)
                 {
