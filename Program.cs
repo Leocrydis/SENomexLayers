@@ -11,13 +11,9 @@ namespace SENomexLayers
     {
         public static object? GetActiveObject(string progId, bool throwOnError = false)
         {
-            if (progId == null)
-            {
-                throw new ArgumentNullException(nameof(progId));
-            }
+            ArgumentNullException.ThrowIfNull(progId);
 
-            Guid clsid;
-            int hr = CLSIDFromProgIDEx(progId, out clsid);
+            int hr = CLSIDFromProgIDEx(progId, out Guid clsid);
 
             if (hr < 0)
             {
@@ -28,8 +24,7 @@ namespace SENomexLayers
                 return null;
             }
 
-            object? obj = null;
-            hr = GetActiveObject(ref clsid, IntPtr.Zero, out obj);
+            hr = GetActiveObject(ref clsid, IntPtr.Zero, out object? obj);
 
             if (hr < 0)
             {
@@ -129,7 +124,6 @@ namespace SENomexLayers
     {
         public SolidEdgePart.SheetMetalDocument ConnectToSolidEdge(string filePath)
         {
-            Application? objApplication = null;
             SolidEdgePart.SheetMetalDocument? objDocument = null;
 
             try
@@ -137,7 +131,7 @@ namespace SENomexLayers
                 OleMessageFilter.Register();
 
                 // Try to connect to a running instance of Solid Edge
-                objApplication = (Application?)MarshalHelper.GetActiveObject("SolidEdge.Application");
+                Application? objApplication = (Application?)MarshalHelper.GetActiveObject("SolidEdge.Application");
 
                 if (objApplication != null)
                 {
@@ -176,7 +170,6 @@ namespace SENomexLayers
             return objDocument ?? throw new InvalidOperationException("Failed to open the document.");
         }
 
-        //First try to open the custom section of the file properties without opening the document
         public List<string> GetCustomProperties(string filePath)
         {
             var customPropertiesList = new List<string>();
@@ -196,17 +189,18 @@ namespace SENomexLayers
                     }
                 }
             }
-            // If the the custom sections happens to not be there its likely because the document is open in Solid Edge
+            // If the custom sections happen to not be there, it's likely because the document is open in Solid Edge
             catch (Exception ex)
             {
-                //Most likely means someone has it open in Solid Edge?
-                Console.WriteLine($"Failed to retrieve file properties without opening the document: {ex.Message}"); 
+                Console.WriteLine($"Failed to retrieve file properties without opening the document: {ex.Message}");
 
                 // If failed, open the document in Solid Edge using SolidEdgeConnector Function
                 SolidEdgePart.SheetMetalDocument? objDocument = null;
+                Application? objApplication = null;
                 try
                 {
                     objDocument = ConnectToSolidEdge(filePath);
+                    objApplication = objDocument?.Application;
                     if (objDocument != null)
                     {
                         var objPropSets = objDocument.Properties;
@@ -238,6 +232,11 @@ namespace SENomexLayers
                 finally
                 {
                     objDocument?.Close(false);
+                    if (objApplication != null)
+                    {
+                        objApplication.Quit();
+                        Marshal.ReleaseComObject(objApplication);
+                    }
                 }
             }
 
