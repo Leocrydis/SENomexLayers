@@ -90,7 +90,7 @@ namespace SENomexLayers
         }
 
         [DllImport("Ole32.dll")]
-        private static extern int CoRegisterMessageFilter(IOleMessageFilter newFilter, out IOleMessageFilter oldFilter);
+        private static extern int CoRegisterMessageFilter(IOleMessageFilter? newFilter, out IOleMessageFilter oldFilter);
     }
 
     public enum SERVERCALL
@@ -145,7 +145,7 @@ namespace SENomexLayers
                 else
                 {
                     // If no running instance, create a new instance of Solid Edge
-                    objApplication = (Application)Activator.CreateInstance(Type.GetTypeFromProgID("SolidEdge.Application")!);
+                    objApplication = (Application?)Activator.CreateInstance(Type.GetTypeFromProgID("SolidEdge.Application")!);
 
                     if (objApplication != null)
                     {
